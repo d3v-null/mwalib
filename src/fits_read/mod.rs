@@ -1,11 +1,11 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#![warn(clippy::all)]
 
 /*!
 Helper functions for reading FITS files.
  */
-
 pub mod error;
 pub use error::FitsError;
 
@@ -563,6 +563,7 @@ mod tests {
     use fitsio::images::{ImageDescription, ImageType};
     use fitsio::tables::{ColumnDataType, ColumnDescription};
     use fitsio_sys::ffpkls;
+    use float_cmp::*;
 
     #[test]
     fn test_get_hdu_image_size_image() {
@@ -849,7 +850,7 @@ mod tests {
         let mut fptr = fits_open!(&metafits)?;
         let hdu = fits_open_hdu!(&mut fptr, 0)?;
         let freq_centre: f64 = get_required_fits_key!(&mut fptr, &hdu, "FREQCENT")?;
-        assert_eq!(freq_centre, 154.24);
+        assert!(approx_eq!(f64, freq_centre, 154.24));
         let fine_chan_width: u8 = get_required_fits_key!(&mut fptr, &hdu, "FINECHAN")?;
         assert_eq!(fine_chan_width, 10);
 
@@ -865,7 +866,7 @@ mod tests {
 
         let hdu = fits_open_hdu!(&mut fptr, 1)?;
         let east: Vec<f32> = get_fits_col!(&mut fptr, &hdu, "East")?;
-        assert_eq!(east[0], -585.675);
+        assert!(approx_eq!(f32, east[0], -585.675));
         let doesnt_exist: Result<Vec<f32>, FitsError> = get_fits_col!(&mut fptr, &hdu, "South");
         assert!(doesnt_exist.is_err());
         Ok(())
@@ -877,7 +878,7 @@ mod tests {
         let mut fptr = fits_open!(&metafits)?;
         let hdu = fits_open_hdu!(&mut fptr, 0)?;
         let freq_centre: f64 = get_required_fits_key!(&mut fptr, &hdu, "FREQCENT")?;
-        assert_eq!(freq_centre, 147.84);
+        assert!(approx_eq!(f64, freq_centre, 147.84));
         let fine_chan_width: u8 = get_required_fits_key!(&mut fptr, &hdu, "FINECHAN")?;
         assert_eq!(fine_chan_width, 10);
 
@@ -893,7 +894,7 @@ mod tests {
 
         let hdu = fits_open_hdu!(&mut fptr, 1)?;
         let east: Vec<f32> = get_fits_col!(&mut fptr, &hdu, "East")?;
-        assert_eq!(east[0], -585.675);
+        assert!(approx_eq!(f32, east[0], -585.675));
         let doesnt_exist: Result<Vec<f32>, FitsError> = get_fits_col!(&mut fptr, &hdu, "South");
         assert!(doesnt_exist.is_err());
         Ok(())

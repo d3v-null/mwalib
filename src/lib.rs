@@ -1,6 +1,7 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#![warn(clippy::all)]
 
 /*!
 Definitions for what we expose to the library
@@ -18,6 +19,9 @@ pub mod misc;
 pub mod rfinput;
 pub mod timestep;
 pub mod visibility_pol;
+
+#[cfg(feature = "python")]
+mod python;
 
 /// The MWA's latitude on Earth in radians. This is -26d42m11.94986s.
 pub const MWA_LATITUDE_RADIANS: f64 = -0.4660608448386394;

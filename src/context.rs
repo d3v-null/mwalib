@@ -1,6 +1,7 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#![warn(clippy::all)]
 
 /*!
 The main interface to MWA data.
@@ -14,23 +15,31 @@ use crate::antenna::*;
 use crate::baseline::*;
 use crate::coarse_channel::*;
 use crate::convert::*;
+use crate::error::*;
 use crate::gpubox::*;
 use crate::rfinput::*;
 use crate::timestep::*;
 use crate::visibility_pol::*;
 use crate::*;
 
+#[cfg(feature = "python")]
+use numpy::*;
+#[cfg(feature = "python")]
+use pyo3::prelude::*;
+#[cfg(feature = "python")]
+use pyo3::types::PyString;
+
 /// Enum for all of the known variants of file format based on Correlator version
 ///
 #[repr(C)]
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum CorrelatorVersion {
-    /// MWAX correlator (v2.0)
-    V2,
-    /// MWA correlator (v1.0), having data files with "gpubox" and batch numbers in their names.
-    Legacy,
-    /// MWA correlator (v1.0), having data files without any batch numbers.
-    OldLegacy,
+    /// MWA correlator (v1.0), having data files without any batch numbers.    
+    OldLegacy = 1 as isize,
+    /// MWA correlator (v1.0), having data files with "gpubox" and batch numbers in their names.    
+    Legacy = 2 as isize,
+    /// MWAX correlator (v2.0)    
+    V2 = 3 as isize,
 }
 
 /// Implements fmt::Display for CorrelatorVersion struct
@@ -65,131 +74,195 @@ impl fmt::Display for CorrelatorVersion {
 ///
 /// The name is not following the rust convention of camel case, to make it look
 /// more like a C library.
+#[cfg_attr(feature = "python", pyclass)]
 #[allow(non_camel_case_types)]
 pub struct mwalibContext {
     /// Latitude of centre point of MWA in raidans
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub mwa_latitude_radians: f64,
     /// Longitude of centre point of MWA in raidans
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub mwa_longitude_radians: f64,
     /// Altitude of centre poing of MWA in metres
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub mwa_altitude_metres: f64,
     /// the velocity factor of electic fields in RG-6 like coax
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub coax_v_factor: f64,
     /// Observation id
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub obsid: u32,
     /// Scheduled start (gps time) of observation
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub scheduled_start_gpstime_milliseconds: u64,
     /// Scheduled end (gps time) of observation
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub scheduled_end_gpstime_milliseconds: u64,
     /// Scheduled start (UNIX time) of observation
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub scheduled_start_unix_time_milliseconds: u64,
     /// Scheduled end (UNIX time) of observation
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub scheduled_end_unix_time_milliseconds: u64,
     /// Scheduled start (UTC) of observation
+    ///#[pyo3(get, set)]
     pub scheduled_start_utc: DateTime<FixedOffset>,
     /// Scheduled end (UTC) of observation
+    ///#[pyo3(get, set)]
     pub scheduled_end_utc: DateTime<FixedOffset>,
     /// Scheduled start (MJD) of observation
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub scheduled_start_mjd: f64,
     /// Scheduled end (MJD) of observation
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub scheduled_end_mjd: f64,
     /// Scheduled duration of observation
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub scheduled_duration_milliseconds: u64,
     /// RA tile pointing
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub ra_tile_pointing_degrees: f64,
     /// DEC tile pointing
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub dec_tile_pointing_degrees: f64,
     /// RA phase centre
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub ra_phase_center_degrees: Option<f64>,
     /// DEC phase centre
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub dec_phase_center_degrees: Option<f64>,
     /// AZIMUTH
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub azimuth_degrees: f64,
     /// ALTITUDE
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub altitude_degrees: f64,
     /// Altitude of Sun
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub sun_altitude_degrees: f64,
     /// Distance from pointing center to Sun
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub sun_distance_degrees: f64,
     /// Distance from pointing center to the Moon
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub moon_distance_degrees: f64,
     /// Distance from pointing center to Jupiter
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub jupiter_distance_degrees: f64,
     /// Local Sidereal Time
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub lst_degrees: f64,
     /// Hour Angle of pointing center (as a string)
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub hour_angle_string: String,
     /// GRIDNAME
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub grid_name: String,
     /// GRIDNUM
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub grid_number: i32,
     /// CREATOR
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub creator: String,
     /// PROJECT
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub project_id: String,
     /// Observation name
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub observation_name: String,
     /// MWA observation mode
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub mode: String,
     /// RECVRS    // Array of receiver numbers (this tells us how many receivers too)
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub receivers: Vec<usize>,
     /// DELAYS    // Array of delays
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub delays: Vec<usize>,
     /// ATTEN_DB  // global analogue attenuation, in dB
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub global_analogue_attenuation_db: f64,
     /// Seconds of bad data after observation starts
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub quack_time_duration_milliseconds: u64,
     /// OBSID+QUACKTIM as Unix timestamp (first good timestep)
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub good_time_unix_milliseconds: u64,
     /// Version of the correlator format
     pub corr_version: CorrelatorVersion,
+    /// pyo3 cannot convert an enum to a python type yet so we need a python friendly correlator version attribute
+    #[cfg_attr(feature = "python", pyo3(get, set))]
+    correlator_version_index: isize,
     /// The proper start of the observation (the time that is common to all
     /// provided gpubox files).
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub start_unix_time_milliseconds: u64,
     /// `end_time_milliseconds` will is the actual end time of the observation
     /// i.e. start time of last common timestep plus integration time.
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub end_unix_time_milliseconds: u64,
     /// Total duration of observation (based on gpubox files)
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub duration_milliseconds: u64,
     /// Number of timesteps in the observation
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub num_timesteps: usize,
     /// This is an array of all timesteps we have data for
+    ///#[pyo3(get, set)]
     pub timesteps: Vec<mwalibTimeStep>,
     /// Total number of antennas (tiles) in the array
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub num_antennas: usize,
     /// We also have just the antennas
+    ///#[pyo3(get, set)]
     pub antennas: Vec<mwalibAntenna>,
     /// Number of baselines stored. This is autos plus cross correlations
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub num_baselines: usize,
     /// Baslines
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub baselines: Vec<mwalibBaseline>,
     /// Total number of rf_inputs (tiles * 2 pols X&Y)
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub num_rf_inputs: usize,
     /// The Metafits defines an rf chain for antennas(tiles) * pol(X,Y)
+    ///#[pyo3(get, set)]
     pub rf_inputs: Vec<mwalibRFInput>,
     /// Number of antenna pols. e.g. X and Y
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub num_antenna_pols: usize,
     /// Number of polarisation combinations in the visibilities e.g. XX,XY,YX,YY == 4
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub num_visibility_pols: usize,
     /// Visibility polarisations
+    ///#[pyo3(get, set)]
     pub visibility_pols: Vec<mwalibVisibilityPol>,
     /// Number of coarse channels after we've validated the input gpubox files
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub num_coarse_channels: usize,
     /// Vector of coarse channel structs
+    ///#[pyo3(get, set)]
     pub coarse_channels: Vec<mwalibCoarseChannel>,
     /// Correlator mode dump time
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub integration_time_milliseconds: u64,
     /// Correlator fine_channel_resolution
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub fine_channel_width_hz: u32,
     /// Total bandwidth of observation (of the coarse channels we have)
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub observation_bandwidth_hz: u32,
     /// Bandwidth of each coarse channel
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub coarse_channel_width_hz: u32,
     /// The value of the FREQCENT key in the metafits file, but in Hz.
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub metafits_centre_freq_hz: u32,
     /// Number of fine channels in each coarse channel
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub num_fine_channels_per_coarse: usize,
     /// Filename of the metafits we were given
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub metafits_filename: String,
 
     /// `gpubox_batches` *must* be sorted appropriately. See
@@ -197,6 +270,7 @@ pub struct mwalibContext {
     /// corresponds directly to other gpubox-related objects
     /// (e.g. `gpubox_hdu_limits`). Structured:
     /// `gpubox_batches[batch][filename]`.
+    ///#[pyo3(get, set)]
     pub gpubox_batches: Vec<GPUBoxBatch>,
 
     /// We assume as little as possible about the data layout in the gpubox
@@ -204,14 +278,17 @@ pub struct mwalibContext {
     /// gpubox, which is associated with another `BTreeMap`, associating each
     /// gpubox number with a gpubox batch number and HDU index. The gpubox
     /// number, batch number and HDU index are everything needed to find the
-    /// correct HDU out of all gpubox files.
+    /// correct HDU out of all gpubox files.    
     pub gpubox_time_map: BTreeMap<u64, BTreeMap<usize, (usize, usize)>>,
 
     /// The number of bytes taken up by a scan/timestep in each gpubox file.
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub num_timestep_coarse_channel_bytes: usize,
     /// The number of floats in each gpubox HDU.
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub num_timestep_coarse_channel_floats: usize,
     /// This is the number of gpubox files *per batch*.
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub num_gpubox_files: usize,
     /// A conversion table to optimise reading of legacy MWA HDUs
     pub legacy_conversion_table: Vec<mwalibLegacyConversionBaseline>,
@@ -492,7 +569,7 @@ impl mwalibContext {
         let legacy_conversion_table: Vec<mwalibLegacyConversionBaseline> =
             match gpubox_info.corr_format {
                 CorrelatorVersion::OldLegacy | CorrelatorVersion::Legacy => {
-                    convert::generate_conversion_array(&mut rf_inputs)
+                    crate::convert::generate_conversion_array(&mut rf_inputs)
                 }
                 _ => Vec::new(),
             };
@@ -539,6 +616,7 @@ impl mwalibContext {
             quack_time_duration_milliseconds,
             good_time_unix_milliseconds,
             corr_version: gpubox_info.corr_format,
+            correlator_version_index: gpubox_info.corr_format as isize,
             start_unix_time_milliseconds,
             end_unix_time_milliseconds,
             duration_milliseconds,
@@ -762,7 +840,7 @@ impl mwalibContext {
         if self.corr_version == CorrelatorVersion::OldLegacy
             || self.corr_version == CorrelatorVersion::Legacy
         {
-            convert::convert_legacy_hdu_to_mwax_baseline_order(
+            crate::convert::convert_legacy_hdu_to_mwax_baseline_order(
                 &self.legacy_conversion_table,
                 &output_buffer,
                 &mut temp_buffer,
@@ -827,7 +905,7 @@ impl mwalibContext {
         if self.corr_version == CorrelatorVersion::OldLegacy
             || self.corr_version == CorrelatorVersion::Legacy
         {
-            convert::convert_legacy_hdu_to_mwax_frequency_order(
+            crate::convert::convert_legacy_hdu_to_mwax_frequency_order(
                 &self.legacy_conversion_table,
                 &output_buffer,
                 &mut temp_buffer,
@@ -837,7 +915,7 @@ impl mwalibContext {
             Ok(temp_buffer)
         } else {
             // Do conversion for mwax (it is in baseline order, we want it in freq order)
-            convert::convert_mwax_hdu_to_frequency_order(
+            crate::convert::convert_mwax_hdu_to_frequency_order(
                 &output_buffer,
                 &mut temp_buffer,
                 self.num_baselines,
@@ -1026,6 +1104,32 @@ impl fmt::Display for mwalibContext {
             meta = self.metafits_filename,
             batches = self.gpubox_batches,
         )
+    }
+}
+
+#[cfg_attr(feature = "python", pymethods)]
+impl mwalibContext {
+    #[new]
+    #[cfg(feature = "python")]
+    fn py_new(metafits: &PyString, gpuboxes: Vec<&PyString>) -> PyResult<Self> {
+        let mut gpubox_strings: Vec<String> = Vec::new();
+
+        for g in &gpuboxes {
+            gpubox_strings.push(g.to_string());
+        }
+        Ok(mwalibContext::new(&metafits.to_string(), &gpubox_strings)?)
+    }
+
+    #[cfg(feature = "python")]
+    fn py_read_by_baseline(
+        &mut self,
+        timestep_index: usize,
+        coarse_channel_index: usize,
+    ) -> PyResult<Py<PyArray1<f32>>> {
+        let gil = pyo3::Python::acquire_gil();
+        let rust_data: Vec<f32> =
+            mwalibContext::read_by_baseline(self, timestep_index, coarse_channel_index)?;
+        Ok(rust_data.to_pyarray(gil.python()).to_owned())
     }
 }
 

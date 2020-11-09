@@ -1,11 +1,17 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#![warn(clippy::all)]
+
 /*!
 Structs and helper methods for Error handling
 */
-
 use thiserror::Error;
+
+#[cfg(feature = "python")]
+use pyo3::create_exception;
+#[cfg(feature = "python")]
+use pyo3::prelude::*;
 
 #[derive(Error, Debug)]
 pub enum MwalibError {
@@ -30,4 +36,15 @@ pub enum MwalibError {
         source_file: String,
         source_line: u32,
     },
+}
+
+// Add a python exception for MwalibError.
+#[cfg(feature = "python")]
+create_exception!(mwalib, PymwalibError, pyo3::exceptions::PyException);
+
+#[cfg(feature = "python")]
+impl std::convert::From<MwalibError> for PyErr {
+    fn from(err: MwalibError) -> PyErr {
+        PymwalibError::new_err(err.to_string())
+    }
 }

@@ -1,6 +1,7 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#![warn(clippy::all)]
 
 /*!
 Structs and helper methods for baseline metadata
@@ -8,13 +9,19 @@ Structs and helper methods for baseline metadata
 use crate::misc;
 use std::fmt;
 
+#[cfg(feature = "python")]
+use pyo3::prelude::*;
+
 /// This is a struct for our baselines, so callers know the antenna ordering
 #[allow(non_camel_case_types)]
+#[cfg_attr(feature = "python", pyclass)]
 #[derive(Clone)]
 pub struct mwalibBaseline {
     /// Index in the mwalibContext.antenna array for antenna1 for this baseline
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub antenna1_index: usize,
     /// Index in the mwalibContext.antenna array for antenna2 for this baseline
+    #[cfg_attr(feature = "python", pyo3(get, set))]
     pub antenna2_index: usize,
 }
 
@@ -51,6 +58,14 @@ impl mwalibBaseline {
         }
 
         bls
+    }
+}
+
+#[cfg_attr(feature = "python", pymethods)]
+impl mwalibBaseline {
+    #[cfg(feature = "python")]
+    pub fn py_populate_baselines(&mut self, num_antennas: usize) -> PyResult<Vec<Self>> {
+        Ok(mwalibBaseline::populate_baselines(num_antennas))
     }
 }
 
