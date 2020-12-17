@@ -514,6 +514,7 @@ mod tests {
     use crate::*;
     use csv::*;
     use float_cmp::*;
+    use messaging::*;
 
     #[test]
     fn test_fine_pfb_reorder() {
@@ -624,8 +625,9 @@ mod tests {
         let metafits = "test_files/1101503312_1_timestep/1101503312.metafits";
         let gpuboxfiles =
             vec!["test_files/1101503312_1_timestep/1101503312_20141201210818_gpubox01_00.fits"];
-        let mut context =
-            mwalibContext::new(&metafits, &gpuboxfiles).expect("Failed to create mwalibContext");
+        let mut messages = mwalibMessageQueue::new();
+        let mut context = mwalibContext::new(&metafits, &gpuboxfiles, &mut messages)
+            .expect("Failed to create mwalibContext");
 
         // Read and convert first HDU
         let mwalib_hdu: Vec<f32> = context.read_by_baseline(0, 0).expect("Error!");
@@ -768,8 +770,9 @@ mod tests {
         let metafits = "test_files/1101503312_1_timestep/1101503312.metafits";
         let gpuboxfiles =
             vec!["test_files/1101503312_1_timestep/1101503312_20141201210818_gpubox01_00.fits"];
-        let mut context =
-            mwalibContext::new(&metafits, &gpuboxfiles).expect("Failed to create mwalibContext");
+        let mut messages = mwalibMessageQueue::new();
+        let mut context = mwalibContext::new(&metafits, &gpuboxfiles, &mut messages)
+            .expect("Failed to create mwalibContext");
 
         // Read and convert first HDU
         let mwalib_hdu: Vec<f32> = context.read_by_frequency(0, 0).expect("Error!");
@@ -939,7 +942,8 @@ mod tests {
         //
         // Open a context and load in a test metafits and gpubox file
         let gpuboxfiles = vec![mwax_filename];
-        let mut context = mwalibContext::new(&mwax_metafits_filename, &gpuboxfiles)
+        let mut messages = mwalibMessageQueue::new();
+        let mut context = mwalibContext::new(&mwax_metafits_filename, &gpuboxfiles, &mut messages)
             .expect("Failed to create mwalibContext");
 
         // Read and convert first HDU

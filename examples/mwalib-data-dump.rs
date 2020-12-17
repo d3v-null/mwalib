@@ -57,7 +57,8 @@ fn dump_data<T: AsRef<std::path::Path>>(
 ) -> Result<(), anyhow::Error> {
     let mut dump_file = File::create(dump_filename)?;
     println!("Dumping data via mwalib...");
-    let mut context = mwalibContext::new(metafits, files)?;
+    let mut message_queue = mwalibMessageQueue::new();
+    let mut context = mwalibContext::new(metafits, files, &mut message_queue)?;
     let coarse_channel_array = context.coarse_channels.clone();
     let timestep_array = context.timesteps.clone();
 

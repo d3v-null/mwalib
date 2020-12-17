@@ -14,6 +14,7 @@ C).
 
 use crate::*;
 use libc::{c_char, c_float, c_longlong, size_t};
+use messaging::*;
 use std::ffi::*;
 use std::ptr;
 use std::slice;
@@ -99,6 +100,103 @@ pub unsafe extern "C" fn mwalib_free_rust_cstring(rust_cstring: *mut c_char) {
     CString::from_raw(rust_cstring);
 }
 
+/// Create and return a pointer to an `mwalibMessageQueue` struct
+///
+///
+/// # Returns
+///
+/// * A Rust-owned populated `mwalibMessageQueue` struct
+///
+///
+/// # Safety
+/// * Caller *must* call the appropriate _free function to release the rust memory.
+#[no_mangle]
+pub unsafe extern "C" fn mwalibMessageQueue_get() -> *mut mwalibMessageQueue {
+    let message_queue = mwalibMessageQueue::new();
+    Box::into_raw(Box::new(message_queue))
+}
+
+/// Get the next message off the messaging queue.
+///
+/// This returns the date/time, message type and message of the next message in the queue or nothing if there is no message on the queue.
+///
+/// # Arguments
+///
+/// * `message_queue_ptr` - pointer to an already populated mwalibMessageQueue object.
+///
+/// * `message_text` - pointer to already allocated buffer for any messages to be returned to the caller.
+///
+/// * `message_text_length` - length of message_text char* buffer.
+///
+///
+/// # Returns
+///
+/// * 0 on successful read of a message, 1 on failure, 2 if no message exists
+///
+///
+/// # Safety
+/// * message_text *must* point to an already allocated char* buffer for any messaging messages.
+/// * context_ptr must point to a populated object from the mwalibContext_new function.
+/// * Caller *must* call mwalibContext_free_read_buffer function to release the rust memory.
+#[no_mangle]
+pub unsafe extern "C" fn mwalibMessageQueue_get_next_message(
+    message_queue_ptr: *mut mwalibMessageQueue,
+    message_text: *mut u8,
+    message_text_length: size_t,
+) -> i32 {
+    // Don't do anything if the message_text pointer is null.
+    if message_text.is_null() {
+        return 1;
+    }
+    // Load the previously-initialised message_queue struct. Exit if
+    // this is null.
+    let message_queue = if message_queue_ptr.is_null() {
+        set_error_message(
+            "mwalibMessageQueue_get_next_message() ERROR: null pointer for message_queue_ptr passed in",
+            message_text,
+            message_text_length,
+        );
+        return 2;
+    } else {
+        &mut *message_queue_ptr
+    };
+    // Get the message from the queue (this removes it too) if it exists
+    let message_option = message_queue.get_next_message();
+
+    match message_option {
+        Some(msg) => {
+            set_error_message(&msg.message_text, message_text, message_text_length);
+            return 0;
+        }
+        None => return 2,
+    }
+}
+
+/// Free a previously-allocated `mwalibMessageQueue` struct.
+///
+/// # Arguments
+///
+/// * `message_queue_ptr` - pointer to an already populated mwalibMessageQueue object
+///
+///
+/// # Returns
+///
+/// * Nothing
+///
+///
+/// # Safety
+/// * This must be called once caller is finished with the message_queue_ptr object
+/// * context_ptr must point to a populated mwalibContext object from the mwalibMessageQueue_get function.
+/// * context_ptr must not have already been freed.
+#[no_mangle]
+#[cfg(not(tarpaulin_include))]
+pub unsafe extern "C" fn mwalibMessageQueue_free(message_queue_ptr: *mut mwalibMessageQueue) {
+    if message_queue_ptr.is_null() {
+        return;
+    }
+    Box::from_raw(message_queue_ptr);
+}
+
 /// Create and return a pointer to an `mwalibContext` struct
 ///
 /// # Arguments
@@ -129,15 +227,29 @@ pub unsafe extern "C" fn mwalibContext_get(
     gpubox_count: size_t,
     error_message: *mut u8,
     error_message_length: size_t,
+    message_queue_ptr: *mut mwalibMessageQueue,
 ) -> *mut mwalibContext {
+    // Ensure message queue ptr is valid
+    if message_queue_ptr.is_null() {
+        set_error_message(
+            &"Message queue is not initialised",
+            error_message,
+            error_message_length,
+        );
+        return ptr::null_mut();
+    }
+    let mut message_queue = &mut *message_queue_ptr;
+    // Assemble metafits
     let m = CStr::from_ptr(metafits).to_str().unwrap().to_string();
+    // Assemble gpubox files
     let gpubox_slice = slice::from_raw_parts(gpuboxes, gpubox_count);
     let mut gpubox_files = Vec::with_capacity(gpubox_count);
     for g in gpubox_slice {
         let s = CStr::from_ptr(*g).to_str().unwrap();
         gpubox_files.push(s.to_string())
     }
-    let context = match mwalibContext::new(&m, &gpubox_files) {
+    // Populate metadata
+    let context = match mwalibContext::new(&m, &gpubox_files, &mut message_queue) {
         Ok(c) => c,
         Err(e) => {
             set_error_message(&format!("{}", e), error_message, error_message_length);
@@ -1366,12 +1478,15 @@ mod tests {
         let gpubox_files_ptr = gpubox_files.as_ptr() as *mut *const c_char;
 
         unsafe {
+            let message_queue_ptr = mwalibMessageQueue_get();
+
             let context = mwalibContext_get(
                 metafits_file_ptr,
                 gpubox_files_ptr,
                 1,
                 error_message_ptr,
                 60,
+                message_queue_ptr,
             );
 
             // Check we got a context object
@@ -1437,12 +1552,14 @@ mod tests {
         let gpubox_files_ptr = gpubox_files.as_ptr() as *mut *const c_char;
 
         unsafe {
+            let message_queue_ptr = mwalibMessageQueue_get();
             let context = mwalibContext_get(
                 metafits_file_ptr,
                 gpubox_files_ptr,
                 1,
                 error_message_ptr,
                 60,
+                message_queue_ptr,
             );
 
             // Check we got a context object
@@ -1497,12 +1614,14 @@ mod tests {
         let gpubox_files_ptr = gpubox_files.as_ptr() as *mut *const c_char;
 
         unsafe {
+            let message_queue_ptr = mwalibMessageQueue_get();
             let context = mwalibContext_get(
                 metafits_file_ptr,
                 gpubox_files_ptr,
                 1,
                 error_message_ptr,
                 60,
+                message_queue_ptr,
             );
 
             // Check we got a context object
@@ -1569,12 +1688,14 @@ mod tests {
         let gpubox_files_ptr = gpubox_files.as_ptr() as *mut *const c_char;
 
         unsafe {
+            let message_queue_ptr = mwalibMessageQueue_get();
             let context = mwalibContext_get(
                 metafits_file_ptr,
                 gpubox_files_ptr,
                 1,
                 error_message_ptr,
                 60,
+                message_queue_ptr,
             );
 
             // Check we got a context object
@@ -1622,12 +1743,14 @@ mod tests {
         let gpubox_files_ptr = gpubox_files.as_ptr() as *mut *const c_char;
 
         unsafe {
+            let message_queue_ptr = mwalibMessageQueue_get();
             let context = mwalibContext_get(
                 metafits_file_ptr,
                 gpubox_files_ptr,
                 1,
                 error_message_ptr,
                 60,
+                message_queue_ptr,
             );
 
             // Check we got a context object
@@ -1695,12 +1818,14 @@ mod tests {
         let gpubox_files_ptr = gpubox_files.as_ptr() as *mut *const c_char;
 
         unsafe {
+            let message_queue_ptr = mwalibMessageQueue_get();
             let context = mwalibContext_get(
                 metafits_file_ptr,
                 gpubox_files_ptr,
                 1,
                 error_message_ptr,
                 60,
+                message_queue_ptr,
             );
 
             // Check we got a context object
@@ -1748,12 +1873,14 @@ mod tests {
         let gpubox_files_ptr = gpubox_files.as_ptr() as *mut *const c_char;
 
         unsafe {
+            let message_queue_ptr = mwalibMessageQueue_get();
             let context = mwalibContext_get(
                 metafits_file_ptr,
                 gpubox_files_ptr,
                 1,
                 error_message_ptr,
                 60,
+                message_queue_ptr,
             );
 
             // Check we got a context object
@@ -1820,12 +1947,14 @@ mod tests {
         let gpubox_files_ptr = gpubox_files.as_ptr() as *mut *const c_char;
 
         unsafe {
+            let message_queue_ptr = mwalibMessageQueue_get();
             let context = mwalibContext_get(
                 metafits_file_ptr,
                 gpubox_files_ptr,
                 1,
                 error_message_ptr,
                 60,
+                message_queue_ptr,
             );
 
             // Check we got a context object
@@ -1874,12 +2003,14 @@ mod tests {
         let gpubox_files_ptr = gpubox_files.as_ptr() as *mut *const c_char;
 
         unsafe {
+            let message_queue_ptr = mwalibMessageQueue_get();
             let context = mwalibContext_get(
                 metafits_file_ptr,
                 gpubox_files_ptr,
                 1,
                 error_message_ptr,
                 60,
+                message_queue_ptr,
             );
 
             // Check we got a context object
@@ -1947,12 +2078,14 @@ mod tests {
         let gpubox_files_ptr = gpubox_files.as_ptr() as *mut *const c_char;
 
         unsafe {
+            let message_queue_ptr = mwalibMessageQueue_get();
             let context = mwalibContext_get(
                 metafits_file_ptr,
                 gpubox_files_ptr,
                 1,
                 error_message_ptr,
                 60,
+                message_queue_ptr,
             );
 
             // Check we got a context object
@@ -2000,12 +2133,14 @@ mod tests {
         let gpubox_files_ptr = gpubox_files.as_ptr() as *mut *const c_char;
 
         unsafe {
+            let message_queue_ptr = mwalibMessageQueue_get();
             let context = mwalibContext_get(
                 metafits_file_ptr,
                 gpubox_files_ptr,
                 1,
                 error_message_ptr,
                 60,
+                message_queue_ptr,
             );
 
             // Check we got a context object
@@ -2073,12 +2208,14 @@ mod tests {
         let gpubox_files_ptr = gpubox_files.as_ptr() as *mut *const c_char;
 
         unsafe {
+            let message_queue_ptr = mwalibMessageQueue_get();
             let context = mwalibContext_get(
                 metafits_file_ptr,
                 gpubox_files_ptr,
                 1,
                 error_message_ptr,
                 60,
+                message_queue_ptr,
             );
 
             // Check we got a context object
@@ -2129,12 +2266,14 @@ mod tests {
         let gpubox_files_ptr = gpubox_files.as_ptr() as *mut *const c_char;
 
         unsafe {
+            let message_queue_ptr = mwalibMessageQueue_get();
             let context = mwalibContext_get(
                 metafits_file_ptr,
                 gpubox_files_ptr,
                 1,
                 error_message_ptr,
                 60,
+                message_queue_ptr,
             );
 
             // Check we got a context object

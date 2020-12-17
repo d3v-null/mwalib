@@ -14,6 +14,7 @@ pub mod error;
 pub mod ffi;
 pub mod fits_read;
 pub mod gpubox;
+pub mod messaging;
 pub mod misc;
 pub mod rfinput;
 pub mod timestep;
@@ -31,6 +32,7 @@ pub use antenna::*;
 pub use context::{mwalibContext, CorrelatorVersion};
 pub use error::MwalibError;
 pub use fits_read::*;
+pub use messaging::mwalibMessageQueue;
 pub use rfinput::*;
 
 // So that callers don't use a different version of fitsio, export them here.

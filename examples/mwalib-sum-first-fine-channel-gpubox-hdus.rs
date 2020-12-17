@@ -30,7 +30,8 @@ struct Opt {
 fn main() -> Result<(), anyhow::Error> {
     let opts = Opt::from_args();
 
-    let mut context = mwalibContext::new(&opts.metafits, &opts.files)?;
+    let mut message_queue = mwalibMessageQueue::new();
+    let mut context = mwalibContext::new(&opts.metafits, &opts.files, &mut message_queue)?;
     if context.corr_version != CorrelatorVersion::V2 {
         bail!("Input data is not MWAX data; exiting.");
     }

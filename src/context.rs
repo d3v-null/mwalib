@@ -15,6 +15,7 @@ use crate::baseline::*;
 use crate::coarse_channel::*;
 use crate::convert::*;
 use crate::gpubox::*;
+use crate::messaging::*;
 use crate::rfinput::*;
 use crate::timestep::*;
 use crate::visibility_pol::*;
@@ -228,16 +229,19 @@ impl mwalibContext {
     ///
     /// * `gpuboxes` - slice of filenames of gpubox files as paths or strings.
     ///
+    /// * `message_queue` - a mwalibMessageQueue struct to handle messaging from mwalib processes
     ///
     /// # Returns
     ///
     /// * Result containing a populated mwalibContext object if Ok.
     ///
     ///
-    pub fn new<T: AsRef<std::path::Path>>(
+    fn populate<T: AsRef<std::path::Path>>(
         metafits: &T,
         gpuboxes: &[T],
+        message_queue: &mut mwalibMessageQueue,
     ) -> Result<Self, MwalibError> {
+        message_queue.info_message("Reading metadata");
         // Pull out observation details. Save the metafits HDU for faster
         // accesses.
         let mut metafits_fptr = fits_open!(&metafits)?;
@@ -246,6 +250,7 @@ impl mwalibContext {
 
         // Populate obsid from the metafits
         let obsid = get_required_fits_key!(&mut metafits_fptr, &metafits_hdu, "GPSTIME")?;
+        message_queue.info_message(&format!("obs_id is {}", obsid));
 
         // from MWA_Tools/CONV2UVFITS/convutils.h
         // Used to determine electrical lengths if EL_ not present in metafits for an rf_input
@@ -264,6 +269,7 @@ impl mwalibContext {
             (gt * 1000.).round() as _
         };
 
+        message_queue.info_message("Determining timestep and gpubox mapping metadata");
         let (gpubox_info, timesteps) =
         // Do gpubox stuff only if we have gpubox files.
             if !gpuboxes.is_empty() {
@@ -320,6 +326,7 @@ impl mwalibContext {
         let num_antennas = num_rf_inputs / 2;
 
         // Create a vector of rf_input structs from the metafits
+        message_queue.info_message("Populating rf_input metadata");
         let mut rf_inputs: Vec<mwalibRFInput> = mwalibRFInput::populate_rf_inputs(
             num_rf_inputs,
             &mut metafits_fptr,
@@ -331,15 +338,18 @@ impl mwalibContext {
         rf_inputs.sort_by_key(|k| k.subfile_order);
 
         // Now populate the antennas (note they need to be sorted by subfile_order)
+        message_queue.info_message("Populating antenna metadata");
         let antennas: Vec<mwalibAntenna> = mwalibAntenna::populate_antennas(&rf_inputs);
 
         // Populate baselines
+        message_queue.info_message("Populating baseline metadata");
         let baselines = mwalibBaseline::populate_baselines(num_antennas);
 
         // Always assume that MWA antennas have 2 pols
         let num_antenna_pols = 2;
 
         // Populate the pols that come out of the correlator
+        message_queue.info_message("Populating polarisation metadata");
         let visibility_pols = mwalibVisibilityPol::populate_visibility_pols();
         let num_visibility_pols = visibility_pols.len();
 
@@ -354,6 +364,7 @@ impl mwalibContext {
         };
 
         // Populate coarse channels
+        message_queue.info_message("Populating coarse channel metadata");
         let (coarse_channels, num_coarse_channels, coarse_channel_width_hz) =
             coarse_channel::mwalibCoarseChannel::populate_coarse_channels(
                 &mut metafits_fptr,
@@ -384,6 +395,7 @@ impl mwalibContext {
 
         // We have enough information to validate HDU matches metafits
         if !gpuboxes.is_empty() {
+            message_queue.info_message("Validating metadata vs gpuboxfiles provided");
             let coarse_channel = coarse_channels[0].gpubox_number;
             let (batch_index, _) =
                 gpubox_info.time_map[&timesteps[0].unix_time_ms][&coarse_channel];
@@ -402,12 +414,14 @@ impl mwalibContext {
         // Populate the start and end times of the observation.
         // Start= start of first timestep
         // End  = start of last timestep + integration time
+        message_queue.info_message("Determining common start and end times");
         let (start_unix_time_milliseconds, end_unix_time_milliseconds, duration_milliseconds) = {
             let o = determine_obs_times(&gpubox_info.time_map, integration_time_milliseconds)?;
             (o.start_millisec, o.end_millisec, o.duration_millisec)
         };
 
         // populate lots of useful metadata
+        message_queue.info_message("Populating other metadata");
         let scheduled_start_utc_string: String =
             get_required_fits_key!(&mut metafits_fptr, &metafits_hdu, "DATE-OBS")?;
 
@@ -500,6 +514,8 @@ impl mwalibContext {
         // Sort the rf_inputs back into the correct output order
         rf_inputs.sort_by_key(|k| k.subfile_order);
 
+        message_queue.info_message("Finished reading metadata successfully");
+
         Ok(mwalibContext {
             mwa_latitude_radians: MWA_LATITUDE_RADIANS,
             mwa_longitude_radians: MWA_LONGITUDE_RADIANS,
@@ -573,6 +589,22 @@ impl mwalibContext {
             num_gpubox_files: gpuboxes.len(),
             legacy_conversion_table,
         })
+    }
+
+    pub fn new<T: AsRef<std::path::Path>>(
+        metafits: &T,
+        gpuboxes: &[T],
+        message_queue: &mut mwalibMessageQueue,
+    ) -> Result<Self, MwalibError> {
+        message_queue.info_message("mwalib initialising");
+        // Perform parsing
+        let result: Result<Self, MwalibError> =
+            mwalibContext::populate(metafits, gpuboxes, message_queue);
+        if result.is_ok() {
+            message_queue.info_message("mwalib ready");
+        }
+
+        result
     }
 
     /// Validates the first HDU of a gpubox file against metafits metadata
@@ -1040,7 +1072,8 @@ mod tests {
         let gpuboxfiles = Vec::new();
 
         // No gpubox files provided
-        let context = mwalibContext::new(&metafits_filename, &gpuboxfiles);
+        let mut messages = mwalibMessageQueue::new();
+        let context = mwalibContext::new(&metafits_filename, &gpuboxfiles, &mut messages);
         assert!(context.is_ok());
         let context = context.unwrap();
 
@@ -1055,7 +1088,8 @@ mod tests {
         let gpuboxfiles = vec![filename];
 
         // No gpubox files provided
-        let context = mwalibContext::new(&metafits_filename, &gpuboxfiles);
+        let mut messages = mwalibMessageQueue::new();
+        let context = mwalibContext::new(&metafits_filename, &gpuboxfiles, &mut messages);
 
         assert!(context.is_err());
     }
@@ -1073,7 +1107,9 @@ mod tests {
         //
         // Open a context and load in a test metafits and gpubox file
         let gpuboxfiles = vec![filename];
-        let context = mwalibContext::new(&metafits_filename, &gpuboxfiles)
+
+        let mut messages = mwalibMessageQueue::new();
+        let context = mwalibContext::new(&metafits_filename, &gpuboxfiles, &mut messages)
             .expect("Failed to create mwalibContext");
 
         // Test the properties of the context object match what we expect
@@ -1330,7 +1366,8 @@ mod tests {
         //
         // Open a context and load in a test metafits and gpubox file
         let gpuboxfiles = vec![mwax_filename];
-        let mut context = mwalibContext::new(&mwax_metafits_filename, &gpuboxfiles)
+        let mut messages = mwalibMessageQueue::new();
+        let mut context = mwalibContext::new(&mwax_metafits_filename, &gpuboxfiles, &mut messages)
             .expect("Failed to create mwalibContext");
 
         // Read and convert first HDU by baseline
@@ -1374,7 +1411,8 @@ mod tests {
         //
         // Open a context and load in a test metafits and gpubox file
         let gpuboxfiles = vec![filename];
-        let context = mwalibContext::new(&metafits_filename, &gpuboxfiles)
+        let mut messages = mwalibMessageQueue::new();
+        let context = mwalibContext::new(&metafits_filename, &gpuboxfiles, &mut messages)
             .expect("Failed to create mwalibContext");
 
         let coarse_channel = context.coarse_channels[0].gpubox_number;
